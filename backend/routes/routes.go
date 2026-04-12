@@ -40,5 +40,8 @@ func SetupRoutes(r *gin.Engine) {
 	// Boletos Dashboard Endpoints
 	api.GET("/boletos", handlers.ListBoletos)
 	api.PATCH("/boletos/:id/estado", handlers.UpdateEstadoBoleto)
+
+	// Sugerencias Dijkstra
+	api.GET("/sugerencias/:criterio", handlers.GetSugerencias)
 }
 
