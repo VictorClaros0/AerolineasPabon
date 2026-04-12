@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Ticket, Search, Loader2, ArrowRight, User, CheckCircle, XCircle, CreditCard, ChevronDown } from "lucide-react";
+import { Ticket, Search, Loader2, ArrowRight, User, CheckCircle, XCircle, CreditCard, ChevronDown, Plane } from "lucide-react";
 
 export default function GestionBoletos() {
   const [boletos, setBoletos] = useState([]);
@@ -221,7 +221,7 @@ export default function GestionBoletos() {
                         <div className="flex-1 px-4 flex flex-col items-center">
                            <p className="text-[10px] text-gray-500">{selectedBoleto.tiempo_de_viaje} hrs</p>
                            <div className="w-full h-px bg-white/20 relative my-2">
-                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#1a1d2d] px-1">
+                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-1">
                                <Plane className="w-3 h-3 text-blue-400" />
                              </div>
                            </div>
