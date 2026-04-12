@@ -1,0 +1,104 @@
+version: '3.9'
+
+services:
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080/api
+    depends_on:
+      - backend
+    networks:
+      - airres_network
+
+  # Go API Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_PG1_DSN=host=postgres_am user=postgres password=root dbname=airres_am port=5432 sslmode=disable
+      - DB_PG2_DSN=host=postgres_eu user=postgres password=root dbname=airres_eu port=5432 sslmode=disable
+      - DB_MONGO_URI=mongodb://root:root@mongodb:27017/
+      - DB_MONGO_NAME=airres_sync
+    depends_on:
+      postgres_am:
+        condition: service_healthy
+      postgres_eu:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - airres_network
+
+  # PostgreSQL - Region America
+  postgres_am:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=airres_am
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_am:/var/lib/postgresql/data
+      - ./init-scripts/init-pg-am.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - airres_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL - Region Europa/Asia
+  postgres_eu:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=airres_eu
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_eu:/var/lib/postgresql/data
+      - ./init-scripts/init-pg-eu.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - airres_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB - Backup/Sync Replica
+  mongodb:
+    image: mongo:7.0
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=root
+      - MONGO_INITDB_DATABASE=airres_sync
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+      - ./init-scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
+    networks:
+      - airres_network
+
+volumes:
+  pgdata_am:
+  pgdata_eu:
+  mongodata:
+
+networks:
+  airres_network:
+    driver: bridge

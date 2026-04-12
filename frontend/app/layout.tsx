@@ -1,0 +1,47 @@
+import type { Metadata } from 'next';
+import { Inter, Outfit } from 'next/font/google';
+import './globals.css';
+import CountrySelector from '@/components/CountrySelector';
+import Navbar from '@/components/Navbar';
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+const outfit = Outfit({ subsets: ['latin'], variable: '--font-outfit' });
+
+export const metadata: Metadata = {
+  title: 'AirRes | Modern Airline Dashboard',
+  description: 'Sistema de administración de aerolíneas con sincronización en tiempo real.',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="es">
+      <body className={`${inter.variable} ${outfit.variable} font-sans`}>
+        <div className="flex h-screen overflow-hidden">
+          {/* Sidebar Navbar */}
+          <Navbar />
+          
+          {/* Main Content Area */}
+          <main className="flex-1 overflow-y-auto relative flex flex-col">
+            {/* Topbar */}
+            <header className="sticky top-0 z-40 w-full glass-panel border-x-0 border-t-0 rounded-none px-6 py-4 flex items-center justify-between">
+              <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                Reserva de Vuelos
+              </h1>
+              <div className="flex items-center gap-4">
+                <CountrySelector />
+              </div>
+            </header>
+            
+            <div className="p-8 pb-20 w-full max-w-7xl mx-auto">
+              {children}
+            </div>
+          </main>
+        </div>
+      </body>
+    </html>
+  );
+}

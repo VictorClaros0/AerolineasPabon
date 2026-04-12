@@ -1,0 +1,293 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Ticket, Info, Loader2, ArrowRight } from "lucide-react";
+
+export default function Vuelos() {
+  const [vuelos, setVuelos] = useState([]);
+  const [ciudades, setCiudades] = useState([]);
+  const [aviones, setAviones] = useState([]);
+  const [matrix, setMatrix] = useState<any>(null);
+  const [precios, setPrecios] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [errorVuelo, setErrorVuelo] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [currentRegion, setCurrentRegion] = useState("");
+
+  useEffect(() => {
+    const country = JSON.parse(localStorage.getItem("airres-country") || "{}");
+    setCurrentRegion(country.region || "América (Global)");
+  }, []);
+
+  const fetchVuelos = async () => {
+    try {
+      const countryData = JSON.parse(localStorage.getItem("airres-country") || "{}");
+      const countryHeaders = {
+        "X-User-Country": countryData.name || "Estados Unidos",
+        "X-Region": countryData.region || "America"
+      };
+      
+      const res = await fetch("http://localhost:8080/api/vuelos", { headers: countryHeaders });
+      if (res.ok) setVuelos(await res.json());
+
+      const resCiudades = await fetch("http://localhost:8080/api/ciudades", { headers: countryHeaders });
+      if (resCiudades.ok) setCiudades(await resCiudades.json());
+
+      const resAviones = await fetch("http://localhost:8080/api/aviones", { headers: countryHeaders });
+      if (resAviones.ok) setAviones(await resAviones.json());
+
+      const resMatrix = await fetch("http://localhost:8080/api/tiempos", { headers: countryHeaders });
+      if (resMatrix.ok) setMatrix(await resMatrix.json());
+
+      const resPrecios = await fetch("http://localhost:8080/api/precios", { headers: countryHeaders });
+      if (resPrecios.ok) setPrecios(await resPrecios.json());
+      
+    } catch(e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchVuelos();
+  }, []);
+
+  // Utility to convert epoch to readable string
+  const toDate = (epoch: number) => {
+    if(!epoch) return "N/A";
+    const d = new Date(epoch * 1000);
+    return d.toLocaleString("es-ES", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+  }
+
+  const changeState = async (id: number, nextStateId: number) => {
+     await fetch(`http://localhost:8080/api/vuelos/${id}/estado?id_estado=${nextStateId}`, { 
+       method: "PUT",
+       headers: {
+        "X-User-Country": JSON.parse(localStorage.getItem("airres-country") || "{}").name || "Estados Unidos",
+        "X-Region": JSON.parse(localStorage.getItem("airres-country") || "{}").region || "America"
+       }
+     });
+     fetchVuelos();
+  }
+
+  const validateRoute = () => {
+    setErrorVuelo(null);
+    const org = (document.getElementById("org") as HTMLSelectElement).value;
+    const dst = (document.getElementById("dst") as HTMLSelectElement).value;
+    if (org && dst && precios) {
+       const orgCity: any = ciudades.find((c: any) => c.id === parseInt(org));
+       const dstCity: any = ciudades.find((c: any) => c.id === parseInt(dst));
+       
+       if (orgCity && dstCity) {
+          const price = precios.matriz_precios_regular?.[orgCity.codigo]?.[dstCity.codigo];
+          if (org === dst || price === null || price === undefined) {
+             setErrorVuelo("🚫 Esta ruta no está permitida. Por favor selecciona un destino habilitado.");
+             (document.getElementById("dst") as HTMLSelectElement).value = "";
+             return false;
+          }
+       }
+    }
+    return true;
+  };
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-5 duration-500">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 flex items-center gap-3">
+            <Ticket className="w-8 h-8 text-blue-500" />
+            Gestión de Vuelos
+          </h2>
+          <p className="text-gray-400 mt-2">Control total sobre cronograma, embarque y despegue.</p>
+        </div>
+        <button onClick={() => { fetchVuelos(); setShowAddModal(true); setErrorVuelo(null); }} className="btn-primary flex justify-center gap-2 items-center">
+            Nuevo Vuelo
+        </button>
+      </div>
+
+      <div className="glass-panel p-6">
+        {/* Modals and forms */}
+        {showAddModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
+             <div className="bg-[#1a1d2d] border border-gray-700/50 p-6 rounded-2xl w-full max-w-md shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500" />
+                
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-2xl font-bold font-heading text-white">Programar Vuelo</h3>
+                    <div className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-400 font-bold uppercase tracking-wider">{currentRegion}</div>
+                 </div>
+                
+                {errorVuelo && (
+                  <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-400 text-sm animate-in zoom-in slide-in-from-top-2 duration-300">
+                     <Info className="w-5 h-5 shrink-0" />
+                     <p>{errorVuelo}</p>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                   <div>
+                     <label className="text-sm font-semibold text-gray-400">Origen</label>
+                     <select 
+                        id="org" 
+                        className="w-full mt-1 bg-white/5 p-2 rounded border border-gray-700 text-white outline-none"
+                        onChange={validateRoute}
+                      >
+                        <option value="">Seleccione Origen...</option>
+                        {ciudades.map((c: any) => (
+                           <option key={c.id} value={c.id} className="text-black">{c.codigo} - {c.pais}</option>
+                        ))}
+                     </select>
+                   </div>
+                   <div>
+                     <label className="text-sm font-semibold text-gray-400">Destino</label>
+                    <select 
+                        id="dst" 
+                        className="w-full mt-1 bg-white/5 p-2 rounded border border-gray-700 text-white outline-none"
+                        onChange={validateRoute}
+                      >
+                         <option value="">Seleccione Destino...</option>
+                         {ciudades.map((c: any) => (
+                            <option key={c.id} value={c.id} className="text-black">{c.codigo} - {c.pais}</option>
+                         ))}
+                      </select>
+                   </div>
+                   <div>
+                     <label className="text-sm font-semibold text-gray-400">Avión</label>
+                     <select id="avion" className="w-full mt-1 bg-white/5 p-2 rounded border border-gray-700 text-white outline-none">
+                        <option value="">Seleccione Avión...</option>
+                        {aviones.map((a: any) => (
+                           <option key={a.id} value={a.id} className="text-black">{a.nombre} ({a.fabricante})</option>
+                        ))}
+                     </select>
+                   </div>
+                   <div>
+                     <label className="text-sm font-semibold text-gray-400">Salida Programada (Fecha y Hora)</label>
+                     <input type="datetime-local" id="fechaOut" className="w-full mt-1 bg-white/5 p-2 rounded border border-gray-700 text-white" />
+                   </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-3">
+                   <button onClick={() => setShowAddModal(false)} disabled={submitting} className="px-4 py-2 rounded text-gray-400 hover:bg-white/5 disabled:opacity-50">Cancelar</button>
+                   <button id="saveBtn" disabled={submitting} onClick={async () => {
+                      const origen = parseInt((document.getElementById("org") as HTMLInputElement).value);
+                      const destino = parseInt((document.getElementById("dst") as HTMLInputElement).value);
+                      const avionId = parseInt((document.getElementById("avion") as HTMLInputElement).value);
+                      const fechaStr = (document.getElementById("fechaOut") as HTMLInputElement).value;
+
+                      if (!origen || !destino || !avionId || !fechaStr) {
+                         setErrorVuelo("Por favor completa todos los campos del formulario.");
+                         return;
+                      }
+
+                      if (!validateRoute()) return;
+                      
+                      setSubmitting(true);
+                      try {
+                        const orgCity: any = ciudades.find((c: any) => c.id === origen);
+                        const dstCity: any = ciudades.find((c: any) => c.id === destino);
+                        
+                        let travelTimeHours = 0;
+                        if (orgCity && dstCity && matrix && matrix[orgCity.codigo] && matrix[orgCity.codigo][dstCity.codigo] !== undefined) {
+                           travelTimeHours = matrix[orgCity.codigo][dstCity.codigo];
+                        } else {
+                           setErrorVuelo("⚠️ Error: La ruta seleccionada no tiene un tiempo de viaje definido.");
+                           setSubmitting(false);
+                           return;
+                        }
+
+                        const epoch = Math.floor(new Date(fechaStr).getTime() / 1000);
+                        const arrivalEpoch = epoch + (travelTimeHours * 3600);
+                        
+                        // Default Gate is 1, in a real scenario we'd assign one per city
+                        const gateId = 1;
+
+                        const res = await fetch("http://localhost:8080/api/vuelos", {
+                           method: "POST",
+                           headers: {
+                             "Content-Type": "application/json",
+                             "X-User-Country": JSON.parse(localStorage.getItem("airres-country") || "{}").name || "Estados Unidos",
+                             "X-Region": JSON.parse(localStorage.getItem("airres-country") || "{}").region || "America"
+                           },
+                           body: JSON.stringify({
+                              id_origen: origen, id_destino: destino, id_avion: avionId, id_estado_vuelo: 1, id_puerta: gateId,
+                              salida_programada: epoch, llegada_programada: arrivalEpoch, 
+                              fecha_salida: epoch, fecha_llegada: arrivalEpoch
+                           })
+                        });
+
+                        if (res.ok) {
+                           setShowAddModal(false);
+                           fetchVuelos();
+                        } else {
+                           const errData = await res.json();
+                           setErrorVuelo(`Error del servidor: ${errData.error || 'No se pudo crear el vuelo'}`);
+                        }
+                      } catch (e) {
+                         setErrorVuelo("Error de red. Asegúrate de que el servidor esté corriendo.");
+                      } finally {
+                        setSubmitting(false);
+                      }
+                   }} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-white shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center gap-2">
+                      {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {submitting ? 'Guardando...' : 'Guardar Vuelo'}
+                   </button>
+                </div>
+             </div>
+          </div>
+        )}
+
+        <div className="w-full rounded-xl border border-white/10 overflow-hidden">
+          {loading ? (
+             <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-blue-500" /></div>
+          ) : vuelos.length === 0 ? (
+             <div className="p-10 text-center text-gray-500">
+               No hay vuelos registrados en la base de datos de esta región ({currentRegion}). 
+               Asegúrate de estar en la región correcta o crea uno nuevo usando el botón "Nuevo Vuelo".
+             </div>
+          ) : (
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-gray-400 uppercase bg-white/5 border-b border-white/10">
+                <tr>
+                  <th className="px-6 py-4">ID Vuelo</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Región DB</th>
+                  <th className="px-6 py-4">Salida Prog.</th>
+                  <th className="px-6 py-4">Llegada Prog.</th>
+                  <th className="px-6 py-4">Acción Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vuelos.map((v: any) => (
+                  <tr key={v.id} className="border-b border-white/5 outline-none hover:bg-white/5 transition-colors">
+                    <td className="px-6 py-4 font-semibold">VUELO-{v.id}</td>
+                    <td className="px-6 py-4">
+                      {v.id_estado_vuelo === 1 && <span className="px-2 py-1 rounded bg-gray-500/20 text-gray-400 border border-gray-500/30">SCHEDULED</span>}
+                      {v.id_estado_vuelo === 2 && <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/50">BOARDING</span>}
+                      {v.id_estado_vuelo === 3 && <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">DEPARTED</span>}
+                      {v.id_estado_vuelo === 4 && <span className="px-2 py-1 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">IN_FLIGHT</span>}
+                      {v.id_estado_vuelo === 5 && <span className="px-2 py-1 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">LANDED</span>}
+                      {v.id_estado_vuelo === 6 && <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/50">ARRIVED</span>}
+                    </td>
+                    <td className="px-6 py-4">
+                       <span className="text-[10px] text-gray-500 font-bold uppercase">{currentRegion}</span>
+                    </td>
+                    <td className="px-6 py-4 opacity-70">{toDate(v.salida_programada)}</td>
+                    <td className="px-6 py-4 opacity-70">{toDate(v.llegada_programada)}</td>
+                    <td className="px-6 py-4">
+                       {v.id_estado_vuelo < 6 && (
+                         <button onClick={() => changeState(v.id, v.id_estado_vuelo + 1)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg flex gap-2 items-center transition shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+                           Siguiente Fase <ArrowRight className="w-3 h-3"/>
+                         </button>
+                       )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
