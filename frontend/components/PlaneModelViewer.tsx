@@ -1,29 +1,78 @@
 "use client";
 
 import React, { Suspense, useRef, useEffect, useState } from "react";
-import { Canvas, useLoader, useFrame } from "@react-three/fiber";
-import { OBJLoader } from "three-stdlib";
-import { OrbitControls, Stage, PerspectiveCamera, Float } from "@react-three/drei";
-import { Loader2 } from "lucide-react";
+import { Canvas, useFrame, useLoader } from "@react-three/fiber";
+import { OBJLoader, FBXLoader } from "three-stdlib";
+import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import * as THREE from "three";
 
-function Model({ id }: { id: number }) {
-  const obj = useLoader(OBJLoader, `/models/${id}.obj`);
-  const meshRef = useRef<any>();
+// Mapeo dinámico de qué avión usa qué extensión
+const FILE_TYPES: Record<number, "obj" | "fbx"> = {
+  1: "fbx",
+  2: "fbx",
+  3: "fbx",
+  4: "fbx",
+};
+
+function AutoScaledModel({ url, isFbx }: { url: string; isFbx: boolean }) {
+  const meshRef = useRef<THREE.Group>(null);
+
+  // Dependiendo del boolean, mandamos a elegir un Loader diferente
+  const object = useLoader(isFbx ? FBXLoader : OBJLoader, url) as THREE.Object3D;
+
+  const cloned = React.useMemo(() => {
+    // Es crítico clonar para no intervenir el caché de React Three Fiber
+    const clone = object.clone(true);
+
+    // 1. Calcular el tamaño físico matemático del avión sin importar de donde provenga
+    const box = new THREE.Box3().setFromObject(clone);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    // 2. Mover los vértices al [0,0,0] exactos en caso de que esté descentrado nativamente en Blender
+    clone.position.x = -center.x;
+    clone.position.y = -center.y;
+    clone.position.z = -center.z;
+
+    // 3. Rehabilitar el material original de la textura exportada
+    if (isFbx) {
+      clone.traverse((child: any) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          // Asegurarnos de que si tiene textura, React actualice sus colores base
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(m => { m.needsUpdate = true; });
+            } else {
+              child.material.needsUpdate = true;
+            }
+          }
+        }
+      });
+    }
+
+    // 4. Crear un grupo base que lo envolverá todo
+    const group = new THREE.Group();
+    group.add(clone);
+
+    // 5. Escalar el avión automáticamente para que todo mida siempre exactamente 12 unidades
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) {
+      const targetScale = 12 / maxDim;
+      group.scale.set(targetScale, targetScale, targetScale);
+    }
+
+    return group;
+  }, [object, isFbx]);
 
   useFrame((state, delta) => {
     if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.2;
+      meshRef.current.rotation.y += delta * 0.4;
     }
   });
 
-  return (
-    <primitive 
-      ref={meshRef}
-      object={obj} 
-      scale={0.05} 
-      position={[0, 0, 0]}
-    />
-  );
+  return <primitive ref={meshRef} object={cloned} />;
 }
 
 export default function PlaneModelViewer({ airplaneId }: { airplaneId: number }) {
@@ -35,31 +84,33 @@ export default function PlaneModelViewer({ airplaneId }: { airplaneId: number })
 
   if (!airplaneId || !isClient) return null;
 
+  // Lógica de URL
+  const ext = FILE_TYPES[airplaneId] || "obj";
+  const url = `/models/${airplaneId}.${ext}`;
+
   return (
     <div className="w-full h-[300px] bg-gradient-to-b from-blue-900/10 to-transparent rounded-3xl border border-white/5 relative overflow-hidden group">
       <div className="absolute top-4 left-6 z-10">
-         <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 opacity-50">Vista Previa 3D</h4>
+        <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 opacity-50">Vista Previa 3D</h4>
       </div>
-      
+
       <Canvas shadows dpr={[1, 2]}>
-        <PerspectiveCamera makeDefault position={[0, 5, 20]} fov={35} />
-        <ambientLight intensity={0.5} />
-        <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1} castShadow />
-        
+        {/* La cámara enfocada directo al medio [0,0,25] y sin Stage interrumpiendo */}
+        <PerspectiveCamera makeDefault position={[0, 0, 25]} fov={45} />
+
+        <ambientLight intensity={1.5} />
+        <directionalLight position={[10, 20, 10]} intensity={2.5} castShadow />
+        <spotLight position={[-10, -10, -10]} intensity={1} />
+
         <Suspense fallback={null}>
-          <Stage environment="city" intensity={0.6} shadows={false}>
-            <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
-              <Model id={airplaneId} />
-            </Float>
-          </Stage>
+          <AutoScaledModel url={url} isFbx={ext === "fbx"} />
         </Suspense>
 
-        <OrbitControls 
-          enableZoom={true} 
-          enablePan={false}
-          autoRotate={false}
-          maxDistance={40}
-          minDistance={10}
+        <OrbitControls
+          enableZoom={true}
+          enablePan={true}
+          minDistance={5}
+          maxDistance={50}
         />
       </Canvas>
 
