@@ -84,9 +84,15 @@ export default function PlaneModelViewer({ airplaneId }: { airplaneId: number })
 
   if (!airplaneId || !isClient) return null;
 
-  // Lógica de URL
-  const ext = FILE_TYPES[airplaneId] || "obj";
-  const url = `/models/${airplaneId}.${ext}`;
+  // Lógica de URL: Mapear el ID del avión a uno de los 4 modelos base
+  let modelId = airplaneId;
+  if (airplaneId >= 1 && airplaneId <= 6) modelId = 1;
+  else if (airplaneId >= 7 && airplaneId <= 24) modelId = 2;
+  else if (airplaneId >= 25 && airplaneId <= 35) modelId = 3;
+  else if (airplaneId >= 36) modelId = 4;
+
+  const ext = FILE_TYPES[modelId] || "obj";
+  const url = `/models/${modelId}.${ext}`;
 
   return (
     <div className="w-full h-[300px] bg-gradient-to-b from-blue-900/10 to-transparent rounded-3xl border border-white/5 relative overflow-hidden group">
