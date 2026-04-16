@@ -12,8 +12,10 @@ import (
 	"airres-api/services"
 
 	"encoding/json"
+	"encoding/csv"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -44,6 +46,9 @@ func main() {
 
 	seedAsientos(db.PGAmerica)
 	seedAsientos(db.PGEuropaAsia)
+
+    seedVuelos(db.PGAmerica)
+    seedVuelos(db.PGEuropaAsia)
 
 	// Seed MongoDB matrices
 	seedMongoMatrices()
@@ -278,4 +283,143 @@ func syncPGSeatsToMongo() {
 		}
 	}
 	log.Printf("[Seed Mongo] Successfully synced seats to MongoDB.")
+}
+
+func seedVuelos(dbConn *gorm.DB) {
+	if dbConn == nil {
+		return
+	}
+	var count int64
+	dbConn.Model(&models.Vuelo{}).Count(&count)
+	if count > 0 {
+		return
+	}
+
+	// ==========================================
+	// CHANGE DATASET PATH HERE
+	// (Pronto lo cambiaremos, editar este path para el nuevo dataset)
+	// ==========================================
+	datasetPath := "02 - Practica 3 Dataset Flights (1).csv"
+	file, err := os.Open(datasetPath)
+	if err != nil {
+		log.Printf("[Seed] Warning: could not find %s for seeding vuelos: %v", datasetPath, err)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	// Skip header
+	_, _ = reader.Read()
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Printf("[Seed] Error reading CSV: %v", err)
+		return
+	}
+
+	// Cache lookup tables for performance
+	ciudades := make(map[string]uint)
+	var ciudadList []models.Ciudad
+	dbConn.Find(&ciudadList)
+	for _, c := range ciudadList {
+		ciudades[c.Codigo] = c.ID
+	}
+
+	estados := make(map[string]uint)
+	var estadoList []models.EstadoVuelo
+	dbConn.Find(&estadoList)
+	for _, e := range estadoList {
+		estados[e.Nombre] = e.ID
+	}
+
+	aviones := make(map[uint]uint)
+	var avionList []models.Avion
+	dbConn.Find(&avionList)
+	for _, a := range avionList {
+		aviones[a.ID] = a.ID
+	}
+
+	puertas := make(map[string]uint)
+	var puertaList []models.Puerta
+	dbConn.Find(&puertaList)
+	for _, p := range puertaList {
+		puertas[p.Puerta+"_"+strconv.Itoa(int(p.IDCiudad))] = p.ID
+	}
+
+	log.Printf("[Seed] Seeding %d vuelos into %s", len(records), dbConn.Name())
+	batchSize := 1000
+	var batch []models.Vuelo
+
+	for i, record := range records {
+		if len(record) < 7 {
+			continue
+		}
+
+		flightDate := strings.TrimSpace(record[0])
+		flightTime := strings.TrimSpace(record[1])
+		origin := strings.TrimSpace(record[2])
+		destination := strings.TrimSpace(record[3])
+		aircraftStr := strings.TrimSpace(record[4])
+		statusStr := strings.TrimSpace(record[5])
+		gateStr := strings.TrimSpace(record[6])
+
+		idOrigen, ok1 := ciudades[origin]
+		idDestino, ok2 := ciudades[destination]
+		if !ok1 || !ok2 {
+			continue // Skip flights if cities not mapped
+		}
+
+		aircraftID, _ := strconv.Atoi(aircraftStr)
+		if _, ok := aviones[uint(aircraftID)]; !ok {
+			aircraftID = 1 // default safely
+		}
+
+		idEstado, ok := estados[statusStr]
+		if !ok {
+			idEstado = 1
+		}
+
+		// Gates logic: dynamically create if not exists
+		gateKey := gateStr + "_" + strconv.Itoa(int(idOrigen))
+		idPuerta, ok := puertas[gateKey]
+		if !ok {
+			newGate := models.Puerta{Puerta: gateStr, IDCiudad: idOrigen}
+			dbConn.Create(&newGate)
+			idPuerta = newGate.ID
+			puertas[gateKey] = idPuerta
+		}
+
+		layout := "01/02/06 15:04"
+		t, err := time.Parse(layout, flightDate+" "+flightTime)
+		var timestamp int64 = 0
+		if err == nil {
+			timestamp = t.Unix() * 1000
+		} else {
+			timestamp = time.Now().Unix() * 1000
+		}
+
+		vuelo := models.Vuelo{
+			IDOrigen:          idOrigen,
+			IDDestino:         idDestino,
+			IDEstadoVuelo:     idEstado,
+			IDPuerta:          idPuerta,
+			IDAvion:           uint(aircraftID),
+			LlegadaProgramada: timestamp + 7200000,
+			SalidaProgramada:  timestamp,
+			LlegadaReal:       timestamp + 7200000,
+			SalidaReal:        timestamp,
+			FechaLlegada:      timestamp + 7200000,
+			FechaSalida:       timestamp,
+		}
+
+		batch = append(batch, vuelo)
+
+		if len(batch) >= batchSize || i == len(records)-1 {
+			if err := dbConn.CreateInBatches(batch, len(batch)).Error; err != nil {
+				log.Printf("[Seed] Error inserting vuelos batch: %v", err)
+			}
+			batch = batch[:0]
+		}
+	}
+	log.Printf("[Seed] Successfully seeded Vuelos into %s", dbConn.Name())
 }

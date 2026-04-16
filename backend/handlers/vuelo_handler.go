@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // GetAllVuelos returns all flights with their status
@@ -23,16 +24,34 @@ func GetAllVuelos(c *gin.Context) {
 	}
 	dbConn, region := db.GetDBForCountry(tag)
 	
+	limitStr := c.DefaultQuery("limit", "50")
+	pageStr := c.DefaultQuery("page", "1")
+	
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 50
+	}
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
 	vuelos := []models.Vuelo{}
 
 	if region == "Asia" && db.MongoDatabase != nil {
 		coll := db.MongoDatabase.Collection("vuelos")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		cursor, _ := coll.Find(ctx, bson.M{})
+		
+		int64Limit := int64(limit)
+		int64Skip := int64(offset)
+		opts := options.Find().SetLimit(int64Limit).SetSkip(int64Skip).SetSort(bson.D{{Key: "id", Value: -1}})
+		
+		cursor, _ := coll.Find(ctx, bson.M{}, opts)
 		cursor.All(ctx, &vuelos)
 	} else if dbConn != nil {
-		dbConn.Find(&vuelos)
+		dbConn.Order("id DESC").Limit(limit).Offset(offset).Find(&vuelos)
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No database connection for region"})
 		return

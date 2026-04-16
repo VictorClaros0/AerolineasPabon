@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS detalles_vuelos (
 );
 
 -- Basic data
-INSERT INTO estados_vuelo (nombre) VALUES ('SCHEDULED'), ('BOARDING'), ('DEPARTED'), ('IN_FLIGHT'), ('LANDED'), ('ARRIVED') ON CONFLICT DO NOTHING;
+INSERT INTO estados_vuelo (nombre) VALUES ('SCHEDULED'), ('BOARDING'), ('DEPARTED'), ('IN_FLIGHT'), ('LANDED'), ('ARRIVED'), ('DELAYED'), ('CANCELLED') ON CONFLICT DO NOTHING;
 
 INSERT INTO aviones (nombre, asientos_regular, asientos_vip, fabricante) VALUES 
 ('Airbus A380-800', 439, 10, 'Airbus'),
