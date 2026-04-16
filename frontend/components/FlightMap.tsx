@@ -85,8 +85,11 @@ export default function FlightMap() {
 
   return (
     <div className="w-full rounded-xl border border-white/10 bg-black/40 overflow-hidden relative" style={{ height: "500px" }}>
-      <div className="absolute top-4 left-4 z-10 bg-black/60 p-3 rounded-lg border border-white/10 backdrop-blur-md">
-        <h4 className="text-sm font-bold text-white font-heading mb-2">Estado de Vuelos</h4>
+      <div className="absolute top-4 left-4 z-10 bg-black/60 p-3 rounded-lg border border-emerald-500/30 backdrop-blur-md shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+        <h4 className="text-sm font-bold text-emerald-400 font-heading mb-2 flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> 
+          Radar Activo
+        </h4>
         <div className="space-y-1 text-xs">
           <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#facc15]" /> <span className="text-gray-300">Programado</span></div>
           <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#4ade80]" /> <span className="text-gray-300">En Vuelo</span></div>
@@ -94,6 +97,17 @@ export default function FlightMap() {
           <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#fb923c]" /> <span className="text-gray-300">Aterrizado</span></div>
         </div>
       </div>
+
+      {/* Radar Sweep Effect */}
+      <div className="absolute top-1/2 left-1/2 w-[800px] h-[800px] -ml-[400px] -mt-[400px] rounded-full pointer-events-none opacity-[0.15] z-0 select-none animate-[border-beam-spin_4s_linear_infinite]"
+        style={{
+          background: 'conic-gradient(from 0deg, transparent 0 340deg, #4ade80 360deg)',
+        }}
+      />
+      {/* Radar Grid Lines */}
+      <div className="absolute top-1/2 left-1/2 w-[200px] h-[200px] -ml-[100px] -mt-[100px] rounded-full border border-emerald-500/10 pointer-events-none z-0" />
+      <div className="absolute top-1/2 left-1/2 w-[400px] h-[400px] -ml-[200px] -mt-[200px] rounded-full border border-emerald-500/10 pointer-events-none z-0" />
+      <div className="absolute top-1/2 left-1/2 w-[600px] h-[600px] -ml-[300px] -mt-[300px] rounded-full border border-emerald-500/10 pointer-events-none z-0" />
 
       <ComposableMap
         projectionConfig={{ scale: 140 }}
@@ -147,16 +161,36 @@ export default function FlightMap() {
 
             return (
               <g key={vuelo.id}>
-                {/* La línea de la ruta parabólica */}
+                {/* La línea de la ruta parabólica principal */}
                 <Line
                   from={originCoord}
                   to={destCoord}
                   stroke={color}
-                  strokeWidth={1.5}
+                  strokeWidth={1}
                   strokeLinecap="round"
-                  style={{ opacity: 0.3 }}
+                  style={{ opacity: 0.15 }}
                   id={`route-${vuelo.id}`}
                 />
+
+                {/* Estela de radar brillante si está en vuelo */}
+                {isFlying && (
+                  <Line
+                    from={originCoord}
+                    to={destCoord}
+                    stroke={color}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    style={{ opacity: 0.7, filter: `drop-shadow(0px 0px 4px ${color})` }}
+                    strokeDasharray="2 4"
+                  >
+                    <animate 
+                      attributeName="stroke-dashoffset" 
+                      values="100;0" 
+                      dur={`${animDur.toFixed(1)}s`} 
+                      repeatCount="indefinite" 
+                    />
+                  </Line>
+                )}
                 
                 {/* Animated airplane ONLY if departed/in-flight, otherwise just show it at end or beginning */}
                 {isFlying && (

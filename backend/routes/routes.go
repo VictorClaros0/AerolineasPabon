@@ -44,6 +44,10 @@ func SetupRoutes(r *gin.Engine) {
 	// Sugerencias Dijkstra
 	api.GET("/sugerencias/:criterio", handlers.GetSugerencias)
 
+	// Inteligencia / Automatización
+	api.GET("/inteligencia/predicciones", handlers.GetPredicciones)
+	api.GET("/inteligencia/yield", handlers.GetYield)
+
 	// Admin Dashboard
 	api.GET("/dashboard", handlers.GetDashboardData)
 }

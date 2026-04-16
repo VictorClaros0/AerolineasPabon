@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plane, Users, CalendarSync, Activity, DollarSign, Map, Search, PieChart, CheckCircle, Clock } from "lucide-react";
+import { Plane, Users, CalendarSync, Activity, DollarSign, Map, Search, PieChart, CheckCircle, Clock, Mic } from "lucide-react";
 import FlightMap from "@/components/FlightMap";
+import SplitFlap from "@/components/SplitFlap";
 
 export default function Dashboard() {
   const [currentTime, setCurrentTime] = useState<string>("--:--:--");
   const [recentFlights, setRecentFlights] = useState<any[]>(Array(10).fill({
     time: "--:--", destination: "---", flight: "---", gate: "--", remark: "Cargando...", color: "text-gray-500"
   }));
+  const [lastSyncCount, setLastSyncCount] = useState<number>(0);
 
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -105,7 +107,19 @@ export default function Dashboard() {
 
       const res = await fetch("http://localhost:8080/api/dashboard", { headers });
       if (res.ok) {
-        setDashboardData(await res.json());
+        const data = await res.json();
+        setDashboardData(data);
+        
+        // Si hay una diferencia sustancial en inventario o vuelos totales, lanza notificacion
+        const currentCount = data.inventario.vuelos_scheduled + data.inventario.vuelos_in_flight + data.inventario.vuelos_landed;
+        if (lastSyncCount !== 0 && currentCount !== lastSyncCount) {
+          // @ts-ignore
+          if (window.electronAPI) {
+            // @ts-ignore
+            window.electronAPI.showNotification("Sincronización Multi-Master", "Réplica completada. Datos de matriz actualizados.");
+          }
+        }
+        setLastSyncCount(currentCount);
       }
     } catch (e) {
       console.error(e);
@@ -116,9 +130,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboard();
-    const inv = setInterval(fetchDashboard, 60000);
+    const inv = setInterval(fetchDashboard, 15000); // Polling más rápido para la DEMO
     return () => clearInterval(inv);
-  }, []);
+  }, [lastSyncCount]);
 
   let finanzas, inventario, geografia, flota, pasajeros, totalAsientos=0, libresPct=0, resPct=0, venPct=0, filteredPasajeros=[];
   if (dashboardData) {
@@ -133,6 +147,35 @@ export default function Dashboard() {
       p.pasaporte.toLowerCase().includes(passengerSearch.toLowerCase())
     ).slice(0, 10) || [];
   }
+
+  // Filtrado de vuelos por la misma búsqueda de pasajeros/ciudades (Voice Command)
+  const displayFlights = passengerSearch 
+    ? recentFlights.filter(f => f.destination.toLowerCase().includes(passengerSearch.toLowerCase()))
+    : recentFlights;
+
+  const startVoiceSearch = () => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'es-ES';
+      recognition.start();
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        const formatted = transcript.replace(/[.,]/g, '').trim();
+        setPassengerSearch(formatted);
+        
+        // Simulación de interacción de torre de control para la inmersión Pro
+        // @ts-ignore
+        if (window.electronAPI) {
+          // @ts-ignore
+          window.electronAPI.showNotification("Comando de Voz", `Filtrando datos por: '${formatted}'`);
+        }
+      };
+    } else {
+      alert("Tu navegador no soporta comandos de voz.");
+    }
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700 pb-12">
@@ -186,14 +229,24 @@ export default function Dashboard() {
                 <div className="col-span-2 text-center">Gate</div>
                 <div className="col-span-3">Remarks</div>
               </div>
-              <div className="flex flex-col gap-2 font-mono text-sm md:text-base lg:text-lg uppercase tracking-[0.15em] font-bold">
-                {recentFlights.map((flight, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-4 py-2 px-2 items-center bg-[#0a0a0a] border-y border-gray-900/80 rounded-sm hover:bg-gray-900/50 transition">
-                    <div className="col-span-2 text-yellow-400 [text-shadow:0_0_8px_#facc15]">{flight.time}</div>
-                    <div className="col-span-3 text-yellow-400 [text-shadow:0_0_8px_#facc15] truncate">{flight.destination}</div>
-                    <div className="col-span-2 text-yellow-400 [text-shadow:0_0_8px_#facc15]">{flight.flight}</div>
-                    <div className="col-span-2 text-yellow-400 [text-shadow:0_0_8px_#facc15] text-center">{flight.gate}</div>
-                    <div className={`col-span-3 ${flight.color} truncate`}>{flight.remark}</div>
+              <div className="flex flex-col gap-2 font-mono text-sm uppercase tracking-[0.15em] font-bold">
+                {displayFlights.slice(0, 10).map((flight, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-4 py-2 px-2 items-center bg-[#0a0a0a] border-y border-gray-900/80 rounded-sm hover:bg-gray-900/50 transition group">
+                    <div className="col-span-2 text-yellow-400 [text-shadow:0_0_8px_#facc15]">
+                      <SplitFlap text={flight.time} length={5} colorClass="text-yellow-400" />
+                    </div>
+                    <div className="col-span-3 text-yellow-400 [text-shadow:0_0_8px_#facc15] truncate flex items-center group-hover:text-blue-400 transition-colors">
+                      <SplitFlap text={flight.destination} length={12} colorClass="text-yellow-400" />
+                    </div>
+                    <div className="col-span-2 text-yellow-400 [text-shadow:0_0_8px_#facc15]">
+                      <SplitFlap text={flight.flight.replace('AP ', 'AP')} length={6} colorClass="text-white" />
+                    </div>
+                    <div className="col-span-2 text-yellow-400 [text-shadow:0_0_8px_#facc15] text-center flex justify-center">
+                      <SplitFlap text={flight.gate} length={2} align="center" colorClass="text-white" />
+                    </div>
+                    <div className={`col-span-3 ${flight.color} truncate`}>
+                      <SplitFlap text={flight.remark} length={9} align="center" colorClass={flight.color} />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -409,11 +462,20 @@ export default function Dashboard() {
               </div>
               <input
                 type="text"
-                className="w-full bg-[#111] border-2 border-gray-800 rounded-xl py-4 pl-12 pr-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition shadow-[0_0_20px_rgba(0,0,0,0.5)]"
-                placeholder="Introduce nombre de pasajero o N° pasaporte para autocompletar..."
+                className="w-full bg-[#111] border-2 border-gray-800 rounded-xl py-4 pl-12 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition shadow-[0_0_20px_rgba(0,0,0,0.5)]"
+                placeholder="Busca por pasajero o destino de vuelo (ej. Madrid)..."
                 value={passengerSearch}
                 onChange={(e) => setPassengerSearch(e.target.value)}
               />
+              <button 
+                onClick={startVoiceSearch} 
+                className="absolute inset-y-0 right-0 pr-4 flex items-center group cursor-pointer"
+                title="Dictar por voz"
+              >
+                <div className="p-2 rounded-full bg-blue-500/10 group-hover:bg-blue-500/30 transition">
+                  <Mic className="h-5 w-5 text-blue-400 group-hover:text-blue-300" />
+                </div>
+              </button>
               
               {passengerSearch && (
                 <div className="absolute w-full mt-2 bg-[#1a1d2d] border border-gray-700 rounded-xl shadow-2xl overflow-hidden z-20 animate-in slide-in-from-top-2">

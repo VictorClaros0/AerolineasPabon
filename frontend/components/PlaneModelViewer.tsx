@@ -34,20 +34,18 @@ function AutoScaledModel({ url, isFbx }: { url: string; isFbx: boolean }) {
     clone.position.y = -center.y;
     clone.position.z = -center.z;
 
-    // 3. Rehabilitar el material original de la textura exportada
-    if (isFbx) {
+    // 3. Rehabilitar el material y reemplazarlo a Holograma
+    const glitchMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.8,
+    });
+
+    if (isFbx || !isFbx) {
       clone.traverse((child: any) => {
         if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-          // Asegurarnos de que si tiene textura, React actualice sus colores base
-          if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(m => { m.needsUpdate = true; });
-            } else {
-              child.material.needsUpdate = true;
-            }
-          }
+          child.material = glitchMaterial;
         }
       });
     }
@@ -69,6 +67,23 @@ function AutoScaledModel({ url, isFbx }: { url: string; isFbx: boolean }) {
   useFrame((state, delta) => {
     if (meshRef.current) {
       meshRef.current.rotation.y += delta * 0.4;
+      
+      // Glitch effect: randomly offset position horizontally slightly or change opacity
+      if (Math.random() > 0.98) {
+        meshRef.current.position.x = (Math.random() - 0.5) * 0.5;
+        clone.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            child.material.opacity = 0.2;
+          }
+        });
+      } else {
+        meshRef.current.position.x = 0;
+        clone.traverse((child: any) => {
+          if (child.isMesh && child.material) {
+            child.material.opacity = 0.8;
+          }
+        });
+      }
     }
   });
 
