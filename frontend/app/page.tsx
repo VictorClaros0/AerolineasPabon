@@ -23,6 +23,7 @@ export default function Dashboard() {
   }));
   const lastSyncCountRef = useRef<number>(0);
 
+  const [nodeStatus, setNodeStatus] = useState<any>({ america: true, europa: true, mongo: true });
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [passengerSearch, setPassengerSearch] = useState("");
@@ -30,7 +31,7 @@ export default function Dashboard() {
   const stats = [
     { label: "Vuelos Activos", value: "124", icon: Plane, color: "text-blue-400", bg: "bg-blue-500/10" },
     { label: "Pasajeros Hoy", value: "8,234", icon: Users, color: "text-purple-400", bg: "bg-purple-500/10" },
-    { label: "Sincronización BD", value: "Activa (3 Nodos)", icon: CalendarSync, color: "text-emerald-400", bg: "bg-emerald-500/10" },
+    { label: "Sincronización BD", value: Object.values(nodeStatus as Record<string, boolean>).filter(Boolean).length === 3 ? "Activa (3 Nodos)" : "Parcial", icon: CalendarSync, color: "text-emerald-400", bg: "bg-emerald-500/10" },
     { label: "Rutas Óptimas", value: "34 Nuevas", icon: Activity, color: "text-pink-400", bg: "bg-pink-500/10" },
   ];
 
@@ -130,6 +131,13 @@ export default function Dashboard() {
       };
 
       const res = await fetch("http://localhost:8080/api/dashboard", { headers });
+      const nsRes = await fetch("http://localhost:8080/api/nodos/status");
+
+      if (nsRes.ok) {
+        const nsData = await nsRes.json();
+        setNodeStatus(nsData);
+      }
+
       if (res.ok) {
         const data = await res.json();
         setDashboardData(data);
@@ -160,18 +168,28 @@ export default function Dashboard() {
     return () => clearInterval(inv);
   }, [fetchDashboard]);
 
-  let finanzas, inventario, geografia, flota, pasajeros, totalAsientos=0, libresPct=0, resPct=0, venPct=0, filteredPasajeros=[];
+  let defaultFinanzas = { ventas_vip: 0, ventas_regular: 0, total_ventas: 0 };
+  let defaultInventario = { asientos_libres: 0, asientos_reservados: 0, asientos_vendidos: 0, vuelos_scheduled: 0, vuelos_boarding: 0, vuelos_departed: 0, vuelos_in_flight: 0, vuelos_landed: 0, vuelos_arrived: 0, vuelos_delayed: 0 };
+  let defaultGeografia = { top_rutas: [], compras_por_pais: [] };
+  
+  let finanzas = defaultFinanzas, inventario = defaultInventario, geografia = defaultGeografia, flota = [], pasajeros = [], totalAsientos=0, libresPct=0, resPct=0, venPct=0, filteredPasajeros=[];
+  
   if (dashboardData) {
-    ({ finanzas, inventario, geografia, flota, pasajeros } = dashboardData);
-    totalAsientos = inventario?.asientos_libres + inventario?.asientos_reservados + inventario?.asientos_vendidos || 1;
-    libresPct = (inventario?.asientos_libres / totalAsientos) * 100;
-    resPct = (inventario?.asientos_reservados / totalAsientos) * 100;
-    venPct = (inventario?.asientos_vendidos / totalAsientos) * 100;
+    finanzas = { ...defaultFinanzas, ...(dashboardData.finanzas || {}) };
+    inventario = { ...defaultInventario, ...(dashboardData.inventario || {}) };
+    geografia = { ...defaultGeografia, ...(dashboardData.geografia || {}) };
+    flota = dashboardData.flota || [];
+    pasajeros = dashboardData.pasajeros || [];
 
-    filteredPasajeros = pasajeros?.filter((p: any) => 
-      p.nombre.toLowerCase().includes(passengerSearch.toLowerCase()) || 
-      p.pasaporte.toLowerCase().includes(passengerSearch.toLowerCase())
-    ).slice(0, 10) || [];
+    totalAsientos = (inventario.asientos_libres || 0) + (inventario.asientos_reservados || 0) + (inventario.asientos_vendidos || 0) || 1;
+    libresPct = ((inventario.asientos_libres || 0) / totalAsientos) * 100;
+    resPct = ((inventario.asientos_reservados || 0) / totalAsientos) * 100;
+    venPct = ((inventario.asientos_vendidos || 0) / totalAsientos) * 100;
+
+    filteredPasajeros = pasajeros.filter((p: any) => 
+      p.nombre?.toLowerCase().includes(passengerSearch.toLowerCase()) || 
+      p.pasaporte?.toLowerCase().includes(passengerSearch.toLowerCase())
+    ).slice(0, 10);
   }
 
   // Filtrado de vuelos por la misma búsqueda de pasajeros/ciudades (Voice Command)
@@ -284,13 +302,21 @@ export default function Dashboard() {
           <div>
             <h3 className="text-xl font-bold mb-4 font-heading">Estado de Nodos</h3>
             <div className="space-y-4">
-              {['América (PostgreSQL)', 'Europa/Asia (PostgreSQL)', 'Backup (MongoDB)'].map((node, i) => (
+              {[
+                { label: 'América (PostgreSQL)', key: 'america' },
+                { label: 'Europa/Asia (PostgreSQL)', key: 'europa' },
+                { label: 'Backup (MongoDB)', key: 'mongo' },
+              ].map((node, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-                    <span className="text-sm font-medium">{node}</span>
+                    <div className={`w-2 h-2 rounded-full ${nodeStatus[node.key] ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`} />
+                    <span className="text-sm font-medium">{node.label}</span>
                   </div>
-                  <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">100% Sync</span>
+                  {nodeStatus[node.key] ? (
+                    <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">100% Sync</span>
+                  ) : (
+                    <span className="text-xs text-red-500 bg-red-500/10 px-2 py-1 rounded-md">Offline</span>
+                  )}
                 </div>
               ))}
             </div>

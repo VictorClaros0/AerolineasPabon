@@ -201,8 +201,46 @@ func getMongoDashboardData(ctx context.Context) DashboardData {
 		return data
 	}
 
-	// Inventario - Asientos
+	// Finanzas y Pasajeros
+	var boletos []models.Boleto
+	boletosColl := db.MongoDatabase.Collection("boletos")
+	cursorB, _ := boletosColl.Find(ctx, bson.M{})
+	cursorB.All(ctx, &boletos)
+
+	var asientos []models.Asiento
 	asientosColl := db.MongoDatabase.Collection("asientos")
+	cursorA, _ := asientosColl.Find(ctx, bson.M{})
+	cursorA.All(ctx, &asientos)
+
+	// Map asientos for fast lookup
+	asientoMap := make(map[uint]string)
+	for _, a := range asientos {
+		asientoMap[a.ID] = a.Clase
+	}
+
+	pasaporteMapMongo := make(map[string]bool)
+	for _, b := range boletos {
+		if clase, ok := asientoMap[b.IDAsiento]; ok {
+			if clase == "VIP" {
+				data.Finanzas.VentasVIP += b.Costo
+			} else if clase == "REGULAR" {
+				data.Finanzas.VentasRegular += b.Costo
+			}
+		}
+
+		if b.Pasaporte != "" && !pasaporteMapMongo[b.Pasaporte] {
+			if len(data.Pasajeros) < 500 {
+				pasaporteMapMongo[b.Pasaporte] = true
+				data.Pasajeros = append(data.Pasajeros, PasajeroData{
+					Nombre:    b.NombrePasajero,
+					Pasaporte: b.Pasaporte,
+				})
+			}
+		}
+	}
+	data.Finanzas.TotalVentas = data.Finanzas.VentasVIP + data.Finanzas.VentasRegular
+
+	// Inventario - Asientos
 	data.Inventario.AsientosLibres, _ = asientosColl.CountDocuments(ctx, bson.M{"estado": "AVAILABLE"})
 	data.Inventario.AsientosReservados, _ = asientosColl.CountDocuments(ctx, bson.M{"estado": "RESERVED"})
 	data.Inventario.AsientosVendidos, _ = asientosColl.CountDocuments(ctx, bson.M{"estado": "SOLD"})
@@ -214,6 +252,7 @@ func getMongoDashboardData(ctx context.Context) DashboardData {
 	data.Inventario.VuelosInFlight, _ = vuelosColl.CountDocuments(ctx, bson.M{"id_estado_vuelo": 4})
 	data.Inventario.VuelosLanded, _ = vuelosColl.CountDocuments(ctx, bson.M{"id_estado_vuelo": 5})
 	data.Inventario.VuelosArrived, _ = vuelosColl.CountDocuments(ctx, bson.M{"id_estado_vuelo": 6})
+	data.Inventario.VuelosDelayed, _ = vuelosColl.CountDocuments(ctx, bson.M{"id_estado_vuelo": bson.M{"$gt": 6}})
 	
 	// Mock Geography for Mongo DB
 	data.Geografia.ComprasPorPais = []CompraPaisData{

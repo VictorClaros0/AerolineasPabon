@@ -54,6 +54,7 @@ func main() {
 	// Seed MongoDB matrices
 	seedMongoMatrices()
 	syncPGSeatsToMongo()
+	syncPGBoletosToMongo()
 	syncPGPuertasToMongo()
 	seedMongoVuelos()
 
@@ -82,6 +83,11 @@ func main() {
 			"message": "AirRes API is running",
 			"country": country,
 		})
+	})
+
+	r.GET("/api/nodos/status", func(c *gin.Context) {
+		status := db.GetNodeStatuses()
+		c.JSON(200, status)
 	})
 
 	log.Println("Starting server on :8080")
@@ -319,6 +325,50 @@ func syncPGSeatsToMongo() {
 			log.Printf("[Seed Mongo] Error syncing seats: %v", err)
 		} else {
 			log.Printf("[Seed Mongo] Successfully synced seats to MongoDB.")
+		}
+	}
+}
+
+func syncPGBoletosToMongo() {
+	if db.MongoClient == nil || db.PGAmerica == nil {
+		return
+	}
+	var boletos []models.Boleto
+	db.PGAmerica.Find(&boletos)
+	
+	if len(boletos) == 0 {
+		return
+	}
+
+	coll := db.MongoDatabase.Collection("boletos")
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	
+	log.Printf("[Seed Mongo] Syncing %d boletos from PG to Mongo with BulkWrite...", len(boletos))
+	
+	var updateModels []mongo.WriteModel
+	for _, boleto := range boletos {
+		filter := bson.M{"id_boleto": boleto.IDBoleto}
+		update := bson.M{"$set": bson.M{
+			"id_boleto":       boleto.IDBoleto,
+			"nombre_pasajero": boleto.NombrePasajero,
+			"email_pasajero":  boleto.EmailPasajero,
+			"id_vuelo":        boleto.IDVuelo,
+			"id_asiento":      boleto.IDAsiento,
+			"costo":           boleto.Costo,
+			"tiempo_de_viaje": boleto.TiempoDeViaje,
+			"pasaporte":       boleto.Pasaporte,
+			"estado":          boleto.Estado,
+		}}
+		updateModels = append(updateModels, mongo.NewUpdateOneModel().SetFilter(filter).SetUpdate(update).SetUpsert(true))
+	}
+
+	if len(updateModels) > 0 {
+		opts := options.BulkWrite().SetOrdered(false)
+		_, err := coll.BulkWrite(ctx, updateModels, opts)
+		if err != nil {
+			log.Printf("[Seed Mongo] Error syncing boletos: %v", err)
+		} else {
+			log.Printf("[Seed Mongo] Successfully synced boletos to MongoDB.")
 		}
 	}
 }
