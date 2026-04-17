@@ -1100,6 +1100,38 @@ export default function GestionBoletos() {
                   </div>
                 )}
 
+                <div className="pt-6 border-t border-white/10 mt-2">
+                  <p className="text-[10px] uppercase text-gray-500 font-bold tracking-widest block mb-4">
+                    Wallet Digital
+                  </p>
+                  <div className="flex flex-col items-center gap-3 bg-gradient-to-br from-white/5 to-blue-900/10 border border-blue-500/20 rounded-2xl p-5">
+                    {/* QR Code */}
+                    <div className="bg-white p-3 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                          `AIRRES-WALLET|ID:${selectedBoleto.id_boleto}|PAX:${selectedBoleto.nombre_pasajero}|RUTA:${getFlightDetails(selectedBoleto.id_vuelo)?.org?.codigo||'?'}-${getFlightDetails(selectedBoleto.id_vuelo)?.dst?.codigo||'?'}|SEAT:${selectedBoleto.id_asiento}|USD:${selectedBoleto.costo}|EST:${selectedBoleto.estado}`
+                        )}&color=0d1117&bgcolor=ffffff`}
+                        alt="QR Wallet"
+                        className="w-[140px] h-[140px] block"
+                      />
+                    </div>
+                    {/* Ticket info compact */}
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Airlines Pabon — Wallet Pass</p>
+                      <p className="text-[11px] text-gray-400 mt-1">Boleto <span className="font-mono text-white">#{selectedBoleto.id_boleto}</span></p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">Escanea para agregar a tu billetera digital</p>
+                    </div>
+                    {/* Status badge */}
+                    <div className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border ${
+                      selectedBoleto.estado === 'SALED' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]' :
+                      selectedBoleto.estado === 'RESERVED' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' :
+                      'bg-red-500/20 text-red-400 border-red-500/40'
+                    }`}>
+                      {selectedBoleto.estado === 'SALED' ? '✓ Confirmado' : selectedBoleto.estado === 'RESERVED' ? '⏳ Reservado' : '✗ Anulado'}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="pt-6 border-t border-white/10 mt-6">
                   <p className="text-[10px] uppercase text-gray-500 font-bold tracking-widest block mb-4">
                     Acciones de Estado

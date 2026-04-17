@@ -88,6 +88,35 @@ func main() {
 	r.Run(":8080")
 }
 
+func parseDatetime(date, t string) int64 {
+	// CSV format: MM/DD/YY  H:MM  (e.g. "03/30/26" "17:33")
+	layouts := []string{
+		"01/02/06 15:04",  // MM/DD/YY H:MM  — primary format
+		"01/02/06 15:04:05",
+		"01/02/06",
+		"1/2/06 15:04",   // M/D/YY H:MM  — for single-digit month/day
+		"1/2/06",
+		// Fallback 4-digit year formats
+		"01/02/2006 15:04",
+		"01/02/2006",
+		"2006-01-02 15:04",
+		"2006-01-02",
+	}
+	combined := strings.TrimSpace(date) + " " + strings.TrimSpace(t)
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, strings.TrimSpace(combined)); err == nil {
+			return parsed.Unix()
+		}
+	}
+	// Fallback: try date-only
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, strings.TrimSpace(date)); err == nil {
+			return parsed.Unix()
+		}
+	}
+	return 0
+}
+
 func seedMongoMatrices() {
 	if db.MongoDatabase == nil {
 		return
@@ -268,8 +297,9 @@ func syncPGSeatsToMongo() {
 	coll := db.MongoDatabase.Collection("asientos")
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	
-	log.Printf("[Seed Mongo] Syncing %d seats from PG to Mongo with correct IDs...", len(seats))
+	log.Printf("[Seed Mongo] Syncing %d seats from PG to Mongo with BulkWrite...", len(seats))
 	
+	var updateModels []mongo.WriteModel
 	for _, seat := range seats {
 		filter := bson.M{"codigo": seat.Codigo, "id_avion": seat.IDAvion}
 		update := bson.M{"$set": bson.M{
@@ -279,13 +309,18 @@ func syncPGSeatsToMongo() {
 			"estado":   seat.Estado,
 			"clase":    seat.Clase,
 		}}
-		opts := options.Update().SetUpsert(true)
-		_, err := coll.UpdateOne(ctx, filter, update, opts)
+		updateModels = append(updateModels, mongo.NewUpdateOneModel().SetFilter(filter).SetUpdate(update).SetUpsert(true))
+	}
+
+	if len(updateModels) > 0 {
+		opts := options.BulkWrite().SetOrdered(false)
+		_, err := coll.BulkWrite(ctx, updateModels, opts)
 		if err != nil {
-			log.Printf("[Seed Mongo] Error syncing seat %s: %v", seat.Codigo, err)
+			log.Printf("[Seed Mongo] Error syncing seats: %v", err)
+		} else {
+			log.Printf("[Seed Mongo] Successfully synced seats to MongoDB.")
 		}
 	}
-	log.Printf("[Seed Mongo] Successfully synced seats to MongoDB.")
 }
 
 func seedVuelos(dbConn *gorm.DB) {
@@ -387,38 +422,24 @@ func seedVuelos(dbConn *gorm.DB) {
 		idPuerta, ok := puertas[gateKey]
 		if !ok {
 			newGate := models.Puerta{Puerta: gateStr, IDCiudad: idOrigen}
-			dbConn.Create(&newGate)
-			idPuerta = newGate.ID
-			puertas[gateKey] = idPuerta
-		}
-
-		layout := "01/02/06 15:04"
-		t, err := time.Parse(layout, flightDate+" "+flightTime)
-		var timestamp int64 = 0
-		if err == nil {
-			timestamp = t.Unix() * 1000
-		} else {
-			timestamp = time.Now().Unix() * 1000
+			if err := dbConn.Create(&newGate).Error; err == nil {
+				puertas[gateKey] = newGate.ID
+				idPuerta = newGate.ID
+			}
 		}
 
 		vuelo := models.Vuelo{
-			IDOrigen:          idOrigen,
-			IDDestino:         idDestino,
-			IDEstadoVuelo:     idEstado,
-			IDPuerta:          idPuerta,
-			IDAvion:           uint(aircraftID),
-			LlegadaProgramada: timestamp + 7200000,
-			SalidaProgramada:  timestamp,
-			LlegadaReal:       timestamp + 7200000,
-			SalidaReal:        timestamp,
-			FechaLlegada:      timestamp + 7200000,
-			FechaSalida:       timestamp,
+			IDOrigen:      idOrigen,
+			IDDestino:     idDestino,
+			IDEstadoVuelo: idEstado,
+			IDPuerta:      idPuerta,
+			IDAvion:       uint(aircraftID),
+			FechaSalida:   parseDatetime(flightDate, flightTime),
 		}
-
 		batch = append(batch, vuelo)
 
 		if len(batch) >= batchSize || i == len(records)-1 {
-			if err := dbConn.CreateInBatches(batch, len(batch)).Error; err != nil {
+			if err := dbConn.Create(&batch).Error; err != nil {
 				log.Printf("[Seed] Error inserting vuelos batch: %v", err)
 			}
 			batch = batch[:0]
@@ -564,36 +585,23 @@ func seedMongoVuelos() {
 		idPuerta, ok := puertas[gateKey]
 		if !ok {
 			newGate := models.Puerta{Puerta: gateStr, IDCiudad: idOrigen}
-			db.PGAmerica.Create(&newGate)
-			idPuerta = newGate.ID
-			puertas[gateKey] = idPuerta
-		}
-
-		layout := "01/02/06 15:04"
-		t, err := time.Parse(layout, flightDate+" "+flightTime)
-		var timestamp int64 = 0
-		if err == nil {
-			timestamp = t.Unix() * 1000
-		} else {
-			timestamp = time.Now().Unix() * 1000
+			if err := db.PGAmerica.Create(&newGate).Error; err == nil {
+				puertas[gateKey] = newGate.ID
+				idPuerta = newGate.ID
+			}
 		}
 
 		doc := bson.M{
-			"id":                 idCounter,
-			"id_origen":          idOrigen,
-			"id_destino":         idDestino,
-			"id_estado_vuelo":    idEstado,
-			"id_puerta":          idPuerta,
-			"id_avion":           uint(aircraftID),
-			"llegada_programada": timestamp + 7200000,
-			"salida_programada":  timestamp,
-			"llegada_real":       timestamp + 7200000,
-			"salida_real":        timestamp,
-			"fecha_llegada":      timestamp + 7200000,
-			"fecha_salida":       timestamp,
+			"id":             idCounter,
+			"id_origen":      idOrigen,
+			"id_destino":     idDestino,
+			"id_estado_vuelo": idEstado,
+			"id_puerta":      idPuerta,
+			"id_avion":       uint(aircraftID),
+			"fecha_salida":   parseDatetime(flightDate, flightTime),
 		}
-		batch = append(batch, doc)
 		idCounter++
+		batch = append(batch, doc)
 
 		if len(batch) >= batchSize || i == len(records)-1 {
 			if len(batch) > 0 {

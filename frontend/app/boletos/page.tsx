@@ -48,10 +48,10 @@ export default function Boletos() {
           "X-User-Country": countryData.name || "Estados Unidos",
           "X-Region": countryData.region || "America"
         };
-        
+
         const [cRes, vRes, pRes] = await Promise.all([
           fetch("http://localhost:8080/api/ciudades", { headers: countryHeaders }),
-          fetch("http://localhost:8080/api/vuelos", { headers: countryHeaders }),
+          fetch("http://localhost:8080/api/vuelos?limit=10000", { headers: countryHeaders }),
           fetch("http://localhost:8080/api/precios", { headers: countryHeaders })
         ]);
 
@@ -69,8 +69,8 @@ export default function Boletos() {
 
   const handleSearch = () => {
     if (!selectedOrigin || !selectedDestination) return;
-    const filtered = vuelos.filter((v: any) => 
-      v.id_origen === parseInt(selectedOrigin) && 
+    const filtered = vuelos.filter((v: any) =>
+      v.id_origen === parseInt(selectedOrigin) &&
       v.id_destino === parseInt(selectedDestination)
     );
     setFilteredVuelos(filtered);

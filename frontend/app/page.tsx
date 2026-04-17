@@ -1,16 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Plane, Users, CalendarSync, Activity, DollarSign, Map, Search, PieChart, CheckCircle, Clock, Mic } from "lucide-react";
 import FlightMap from "@/components/FlightMap";
 import SplitFlap from "@/components/SplitFlap";
+
+const parseTimezoneOffset = (utcString: string) => {
+  if (!utcString) return -4 * 3600000;
+  const match = utcString.match(/UTC([+-]\d+)(?::(\d+))?/);
+  if (match) {
+    const offsetHours = parseInt(match[1], 10);
+    const offsetMinutes = match[2] ? parseInt(match[2], 10) : 0;
+    return (offsetHours * 3600000) + (offsetHours < 0 ? -offsetMinutes * 60000 : offsetMinutes * 60000);
+  }
+  return -4 * 3600000;
+};
 
 export default function Dashboard() {
   const [currentTime, setCurrentTime] = useState<string>("--:--:--");
   const [recentFlights, setRecentFlights] = useState<any[]>(Array(10).fill({
     time: "--:--", destination: "---", flight: "---", gate: "--", remark: "Cargando...", color: "text-gray-500"
   }));
-  const [lastSyncCount, setLastSyncCount] = useState<number>(0);
+  const lastSyncCountRef = useRef<number>(0);
 
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -25,8 +36,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     const updateTime = () => {
+      const countryData = JSON.parse(localStorage.getItem("airres-country") || "{}");
+      const utcString = countryData.utc || "UTC-4";
       const now = new Date();
-      setCurrentTime(now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      const utcTimeMs = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const targetTime = new Date(utcTimeMs + parseTimezoneOffset(utcString));
+      
+      const timeFormatted = targetTime.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      setCurrentTime(`${timeFormatted} ${utcString}`);
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);
@@ -50,13 +67,20 @@ export default function Dashboard() {
         if (cRes.ok && vRes.ok) {
           const ciudades = await cRes.json();
           let vuelos = await vRes.json();
+          
+          const countryData = JSON.parse(localStorage.getItem("airres-country") || "{}");
+          const utcString = countryData.utc || "UTC-4";
+          const offsetMs = parseTimezoneOffset(utcString);
 
           const formatFlights = vuelos.slice(0, 10).map((v: any) => {
             const destCiudad = ciudades.find((c: any) => c.id === v.id_destino);
             const destinationName = destCiudad ? (destCiudad.codigo + " " + destCiudad.pais).substring(0, 15).toUpperCase() : "UNKNOWN";
 
-            const date = new Date(v.salida_programada * 1000);
-            const timeStr = date.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+            const epochUtcMs = v.salida_programada * 1000;
+            const targetTime = new Date(epochUtcMs + offsetMs);
+            const h = targetTime.getUTCHours().toString().padStart(2, '0');
+            const m = targetTime.getUTCMinutes().toString().padStart(2, '0');
+            const timeStr = `${h}:${m}`;
             
             let remark = "ON TIME";
             let color = "text-yellow-400 [text-shadow:0_0_8px_#facc15]";
@@ -96,7 +120,7 @@ export default function Dashboard() {
     return () => clearInterval(flightInterval);
   }, []);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = useCallback(async () => {
     try {
       setDashboardLoading(true);
       const countryData = JSON.parse(localStorage.getItem("airres-country") || "{}");
@@ -109,30 +133,32 @@ export default function Dashboard() {
       if (res.ok) {
         const data = await res.json();
         setDashboardData(data);
-        
-        // Si hay una diferencia sustancial en inventario o vuelos totales, lanza notificacion
-        const currentCount = data.inventario.vuelos_scheduled + data.inventario.vuelos_in_flight + data.inventario.vuelos_landed;
-        if (lastSyncCount !== 0 && currentCount !== lastSyncCount) {
+
+        const currentCount = (data.inventario?.vuelos_scheduled ?? 0) +
+          (data.inventario?.vuelos_in_flight ?? 0) +
+          (data.inventario?.vuelos_landed ?? 0);
+
+        if (lastSyncCountRef.current !== 0 && currentCount !== lastSyncCountRef.current) {
           // @ts-ignore
           if (window.electronAPI) {
             // @ts-ignore
             window.electronAPI.showNotification("Sincronización Multi-Master", "Réplica completada. Datos de matriz actualizados.");
           }
         }
-        setLastSyncCount(currentCount);
+        lastSyncCountRef.current = currentCount;
       }
     } catch (e) {
       console.error(e);
     } finally {
       setDashboardLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchDashboard();
-    const inv = setInterval(fetchDashboard, 15000); // Polling más rápido para la DEMO
+    const inv = setInterval(fetchDashboard, 30000);
     return () => clearInterval(inv);
-  }, [lastSyncCount]);
+  }, [fetchDashboard]);
 
   let finanzas, inventario, geografia, flota, pasajeros, totalAsientos=0, libresPct=0, resPct=0, venPct=0, filteredPasajeros=[];
   if (dashboardData) {

@@ -34,21 +34,17 @@ function AutoScaledModel({ url, isFbx }: { url: string; isFbx: boolean }) {
     clone.position.y = -center.y;
     clone.position.z = -center.z;
 
-    // 3. Rehabilitar el material y reemplazarlo a Holograma
-    const glitchMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.8,
-    });
-
-    if (isFbx || !isFbx) {
-      clone.traverse((child: any) => {
-        if (child.isMesh) {
-          child.material = glitchMaterial;
+    // 3. Preserve original materials (no overriden glitch material)
+    clone.traverse((child: any) => {
+      if (child.isMesh) {
+        // Ensure materials react to light properly and are visible
+        if (child.material) {
+          child.material.needsUpdate = true;
+          // Optionally, if the model appears too dark, we can tweak material properties here,
+          // but relying on the loaded textures is usually best.
         }
-      });
-    }
+      }
+    });
 
     // 4. Crear un grupo base que lo envolverá todo
     const group = new THREE.Group();
@@ -68,21 +64,12 @@ function AutoScaledModel({ url, isFbx }: { url: string; isFbx: boolean }) {
     if (meshRef.current) {
       meshRef.current.rotation.y += delta * 0.4;
       
-      // Glitch effect: randomly offset position horizontally slightly or change opacity
+      // Keep the rotation, remove the random position glitch if it interferes,
+      // or at least remove the opacity glitching since we restored proper materials.
       if (Math.random() > 0.98) {
-        meshRef.current.position.x = (Math.random() - 0.5) * 0.5;
-        clone.traverse((child: any) => {
-          if (child.isMesh && child.material) {
-            child.material.opacity = 0.2;
-          }
-        });
+        meshRef.current.position.x = (Math.random() - 0.5) * 0.1;
       } else {
         meshRef.current.position.x = 0;
-        clone.traverse((child: any) => {
-          if (child.isMesh && child.material) {
-            child.material.opacity = 0.8;
-          }
-        });
       }
     }
   });

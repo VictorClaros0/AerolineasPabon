@@ -9,13 +9,14 @@ interface Country {
   nameEN: string;
   iso2: string;
   server: string;
+  utc: string;
 }
 
 export default function CountrySelector() {
   const [isOpen, setIsOpen] = useState(false);
   const [countries, setCountries] = useState<Country[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selected, setSelected] = useState<any>({ name: "Estados Unidos", code: "US", region: "America" });
+  const [selected, setSelected] = useState<any>({ name: "Estados Unidos", code: "US", region: "America", utc: "UTC-4" });
   const [loading, setLoading] = useState(true);
 
   // Load and Persist
@@ -34,7 +35,7 @@ export default function CountrySelector() {
           // Initialize US as default
           const us = data.find((c: Country) => c.iso2 === "US");
           if (us) {
-            const initial = { name: us.nameES, code: us.iso2, region: us.server };
+            const initial = { name: us.nameES, code: us.iso2, region: us.server, utc: us.utc };
             setSelected(initial);
             localStorage.setItem("airres-country", JSON.stringify(initial));
           }
@@ -49,7 +50,7 @@ export default function CountrySelector() {
   }, []);
 
   const handleSelect = (c: Country) => {
-    const fresh = { name: c.nameES, code: c.iso2, region: c.server };
+    const fresh = { name: c.nameES, code: c.iso2, region: c.server, utc: c.utc };
     setSelected(fresh);
     localStorage.setItem("airres-country", JSON.stringify(fresh));
     setIsOpen(false);

@@ -58,10 +58,12 @@ export default function FlightMap() {
   useEffect(() => {
     const fetchVuelos = async () => {
       try {
-        const response = await fetch("http://localhost:8080/api/vuelos");
+        // Only fetch a small sample and filter IN_FLIGHT on the client
+        const response = await fetch("http://localhost:8080/api/vuelos?limit=500");
         if (response.ok) {
-          const data = await response.json();
-          setVuelos(data);
+          const data: Vuelo[] = await response.json();
+          // Only keep flights currently IN_FLIGHT (estado 4) or DEPARTED (3)
+          setVuelos(data.filter(v => v.id_estado_vuelo === 4 || v.id_estado_vuelo === 3));
         }
       } catch (error) {
         console.error("Error fetching flights:", error);
@@ -71,7 +73,7 @@ export default function FlightMap() {
     };
 
     fetchVuelos();
-    const interval = setInterval(fetchVuelos, 5000);
+    const interval = setInterval(fetchVuelos, 30000); // Poll every 30s
     return () => clearInterval(interval);
   }, []);
 
@@ -135,84 +137,61 @@ export default function FlightMap() {
             }
           </Geographies>
 
-          {/* Dibuja las conexiones (vuelos) y sus animaciones */}
+          {/* Only draw IN_FLIGHT and DEPARTED planes */}
           {vuelos.map((vuelo, i) => {
             const originCoord = coordenadasCiudades[vuelo.id_origen];
             const destCoord = coordenadasCiudades[vuelo.id_destino];
             
-            // Only draw if we found coords and it's not the exact same city
             if (!originCoord || !destCoord || vuelo.id_origen === vuelo.id_destino) return null;
 
             const color = getColorByState(vuelo.id_estado_vuelo);
-            // Solo mostrar el avión si está en vuelo (o salida)
-            const isFlying = vuelo.id_estado_vuelo === 3 || vuelo.id_estado_vuelo === 4;
 
-            // Compute map distance between origin and destination to define proportional speed
             const dx = destCoord[0] - originCoord[0];
             const dy = destCoord[1] - originCoord[1];
             const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            // Animation duration depends on distance (e.g. mapping coordinates distance -> seconds)
-            // A long intercontinental flight is > 100 units, short flights are ~10-20. 
-            // Min duration 10s, max ~45-60s
-            const animDur = Math.max(10, distance * 0.4); 
-            // Optional delay so they don't all start immediately out of sync
+            const animDur = Math.max(10, distance * 0.4);
             const animBegin = (i % 5) * 0.8;
 
             return (
               <g key={vuelo.id}>
-                {/* La línea de la ruta parabólica principal */}
+                {/* Glowing route line */}
                 <Line
                   from={originCoord}
                   to={destCoord}
                   stroke={color}
-                  strokeWidth={1}
+                  strokeWidth={2}
                   strokeLinecap="round"
-                  style={{ opacity: 0.15 }}
+                  style={{ opacity: 0.6, filter: `drop-shadow(0px 0px 3px ${color})` }}
+                  strokeDasharray="3 5"
                   id={`route-${vuelo.id}`}
-                />
+                >
+                  <animate 
+                    attributeName="stroke-dashoffset" 
+                    values="100;0" 
+                    dur={`${animDur.toFixed(1)}s`} 
+                    repeatCount="indefinite" 
+                  />
+                </Line>
 
-                {/* Estela de radar brillante si está en vuelo */}
-                {isFlying && (
-                  <Line
-                    from={originCoord}
-                    to={destCoord}
-                    stroke={color}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    style={{ opacity: 0.7, filter: `drop-shadow(0px 0px 4px ${color})` }}
-                    strokeDasharray="2 4"
+                {/* Animated airplane icon */}
+                <g fill={color} style={{ filter: `drop-shadow(0 0 4px ${color})` }}>
+                  <path d={PLANE_SVG} transform="translate(-12, -12) scale(0.65) rotate(90)" />
+                  <animateMotion
+                    dur={`${animDur.toFixed(1)}s`}
+                    repeatCount="indefinite"
+                    rotate="auto"
+                    begin={`${animBegin}s`}
                   >
-                    <animate 
-                      attributeName="stroke-dashoffset" 
-                      values="100;0" 
-                      dur={`${animDur.toFixed(1)}s`} 
-                      repeatCount="indefinite" 
-                    />
-                  </Line>
-                )}
-                
-                {/* Animated airplane ONLY if departed/in-flight, otherwise just show it at end or beginning */}
-                {isFlying && (
-                  <g fill={color} style={{ transformOrigin: "center" }}>
-                    <path d={PLANE_SVG} transform="translate(-12, -12) scale(0.6) rotate(90)" />
-                    <animateMotion
-                      dur={`${animDur.toFixed(1)}s`}
-                      repeatCount="indefinite"
-                      rotate="auto"
-                      begin={`${animBegin}s`}
-                    >
-                      <mpath href={`#route-${vuelo.id}`} />
-                    </animateMotion>
-                  </g>
-                )}
-                
-                {/* Ciudades de origen y destino */}
+                    <mpath href={`#route-${vuelo.id}`} />
+                  </animateMotion>
+                </g>
+
+                {/* Airport dots */}
                 <Marker coordinates={originCoord}>
-                  <circle r={2} fill="#ffffff" />
+                  <circle r={2.5} fill="#ffffff" opacity={0.7} />
                 </Marker>
                 <Marker coordinates={destCoord}>
-                  <circle r={2} fill="#ffffff" />
+                  <circle r={2.5} fill="#ffffff" opacity={0.7} />
                 </Marker>
               </g>
             );

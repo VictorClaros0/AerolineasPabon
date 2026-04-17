@@ -16,20 +16,21 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// GetAllVuelos returns all flights with their status
+// GetAllVuelos returns all flights sorted by fecha_salida.
+// Supports ?limit=N&page=P (defaults: limit=10000, page=1).
 func GetAllVuelos(c *gin.Context) {
 	tag := c.GetHeader("X-Region")
 	if tag == "" {
 		tag = c.GetHeader("X-User-Country")
 	}
 	dbConn, region := db.GetDBForCountry(tag)
-	
-	limitStr := c.DefaultQuery("limit", "50")
+
+	limitStr := c.DefaultQuery("limit", "10000")
 	pageStr := c.DefaultQuery("page", "1")
-	
+
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 {
-		limit = 50
+		limit = 10000
 	}
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page <= 0 {
@@ -41,17 +42,22 @@ func GetAllVuelos(c *gin.Context) {
 
 	if region == "Asia" && db.MongoDatabase != nil {
 		coll := db.MongoDatabase.Collection("vuelos")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		
-		int64Limit := int64(limit)
-		int64Skip := int64(offset)
-		opts := options.Find().SetLimit(int64Limit).SetSkip(int64Skip).SetSort(bson.D{{Key: "id", Value: -1}})
-		
+
+		opts := options.Find().
+			SetLimit(int64(limit)).
+			SetSkip(int64(offset)).
+			SetSort(bson.D{{Key: "fecha_salida", Value: 1}})
+
 		cursor, _ := coll.Find(ctx, bson.M{}, opts)
 		cursor.All(ctx, &vuelos)
 	} else if dbConn != nil {
-		dbConn.Order("id DESC").Limit(limit).Offset(offset).Find(&vuelos)
+		dbConn.
+			Order("fecha_salida ASC").
+			Limit(limit).
+			Offset(offset).
+			Find(&vuelos)
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No database connection for region"})
 		return
