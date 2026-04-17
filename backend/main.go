@@ -20,6 +20,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"gorm.io/gorm"
 )
@@ -53,6 +54,8 @@ func main() {
 	// Seed MongoDB matrices
 	seedMongoMatrices()
 	syncPGSeatsToMongo()
+	syncPGPuertasToMongo()
+	seedMongoVuelos()
 
 	// Start Background Multi-Master Syncing Goroutine
 	go services.StartSyncService()
@@ -422,4 +425,185 @@ func seedVuelos(dbConn *gorm.DB) {
 		}
 	}
 	log.Printf("[Seed] Successfully seeded Vuelos into %s", dbConn.Name())
+}
+
+func syncPGPuertasToMongo() {
+	if db.MongoClient == nil || db.PGAmerica == nil {
+		return
+	}
+	var puertas []models.Puerta
+	db.PGAmerica.Find(&puertas)
+	
+	if len(puertas) == 0 {
+		return
+	}
+
+	coll := db.MongoDatabase.Collection("puertas")
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	
+	log.Printf("[Seed Mongo] Syncing %d puertas from PG to Mongo...", len(puertas))
+	
+	var updateModels []mongo.WriteModel
+	for _, puerta := range puertas {
+		filter := bson.M{"id": puerta.ID}
+		update := bson.M{"$set": bson.M{
+			"id":        puerta.ID,
+			"puerta":    puerta.Puerta,
+			"id_ciudad": puerta.IDCiudad,
+		}}
+		updateModels = append(updateModels, mongo.NewUpdateOneModel().SetFilter(filter).SetUpdate(update).SetUpsert(true))
+	}
+
+	if len(updateModels) > 0 {
+		opts := options.BulkWrite().SetOrdered(false)
+		_, err := coll.BulkWrite(ctx, updateModels, opts)
+		if err != nil {
+			log.Printf("[Seed Mongo] Error bulk syncing puertas: %v", err)
+		} else {
+			log.Printf("[Seed Mongo] Successfully synced puertas to MongoDB.")
+		}
+	}
+}
+
+func seedMongoVuelos() {
+	if db.MongoClient == nil || db.PGAmerica == nil {
+		return
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	coll := db.MongoDatabase.Collection("vuelos")
+	count, _ := coll.CountDocuments(ctx, bson.M{})
+	if count > 0 {
+		return
+	}
+
+	datasetPath := "02 - Practica 3 Dataset Flights (1).csv"
+	file, err := os.Open(datasetPath)
+	if err != nil {
+		log.Printf("[Seed Mongo] Warning: could not find %s for seeding vuelos: %v", datasetPath, err)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	_, _ = reader.Read() // Skip header
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Printf("[Seed Mongo] Error reading CSV: %v", err)
+		return
+	}
+
+	// Cache lookup tables from PG America to keep consistent IDs
+	ciudades := make(map[string]uint)
+	var ciudadList []models.Ciudad
+	db.PGAmerica.Find(&ciudadList)
+	for _, c := range ciudadList {
+		ciudades[c.Codigo] = c.ID
+	}
+
+	estados := make(map[string]uint)
+	var estadoList []models.EstadoVuelo
+	db.PGAmerica.Find(&estadoList)
+	for _, e := range estadoList {
+		estados[e.Nombre] = e.ID
+	}
+
+	aviones := make(map[uint]uint)
+	var avionList []models.Avion
+	db.PGAmerica.Find(&avionList)
+	for _, a := range avionList {
+		aviones[a.ID] = a.ID
+	}
+
+	puertas := make(map[string]uint)
+	var puertaList []models.Puerta
+	db.PGAmerica.Find(&puertaList)
+	for _, p := range puertaList {
+		puertas[p.Puerta+"_"+strconv.Itoa(int(p.IDCiudad))] = p.ID
+	}
+
+	log.Printf("[Seed Mongo] Seeding %d vuelos direct into MongoDB with InsertMany", len(records))
+	batchSize := 5000
+	var batch []interface{}
+	
+	idCounter := uint(1)
+
+	for i, record := range records {
+		if len(record) < 7 {
+			continue
+		}
+
+		flightDate := strings.TrimSpace(record[0])
+		flightTime := strings.TrimSpace(record[1])
+		origin := strings.TrimSpace(record[2])
+		destination := strings.TrimSpace(record[3])
+		aircraftStr := strings.TrimSpace(record[4])
+		statusStr := strings.TrimSpace(record[5])
+		gateStr := strings.TrimSpace(record[6])
+
+		idOrigen, ok1 := ciudades[origin]
+		idDestino, ok2 := ciudades[destination]
+		if !ok1 || !ok2 {
+			continue // Skip flights if cities not mapped
+		}
+
+		aircraftID, _ := strconv.Atoi(aircraftStr)
+		if _, ok := aviones[uint(aircraftID)]; !ok {
+			aircraftID = 1
+		}
+
+		idEstado, ok := estados[statusStr]
+		if !ok {
+			idEstado = 1
+		}
+
+		gateKey := gateStr + "_" + strconv.Itoa(int(idOrigen))
+		idPuerta, ok := puertas[gateKey]
+		if !ok {
+			newGate := models.Puerta{Puerta: gateStr, IDCiudad: idOrigen}
+			db.PGAmerica.Create(&newGate)
+			idPuerta = newGate.ID
+			puertas[gateKey] = idPuerta
+		}
+
+		layout := "01/02/06 15:04"
+		t, err := time.Parse(layout, flightDate+" "+flightTime)
+		var timestamp int64 = 0
+		if err == nil {
+			timestamp = t.Unix() * 1000
+		} else {
+			timestamp = time.Now().Unix() * 1000
+		}
+
+		doc := bson.M{
+			"id":                 idCounter,
+			"id_origen":          idOrigen,
+			"id_destino":         idDestino,
+			"id_estado_vuelo":    idEstado,
+			"id_puerta":          idPuerta,
+			"id_avion":           uint(aircraftID),
+			"llegada_programada": timestamp + 7200000,
+			"salida_programada":  timestamp,
+			"llegada_real":       timestamp + 7200000,
+			"salida_real":        timestamp,
+			"fecha_llegada":      timestamp + 7200000,
+			"fecha_salida":       timestamp,
+		}
+		batch = append(batch, doc)
+		idCounter++
+
+		if len(batch) >= batchSize || i == len(records)-1 {
+			if len(batch) > 0 {
+				_, err := coll.InsertMany(context.Background(), batch)
+				if err != nil {
+					log.Printf("[Seed Mongo] Error inserting batch: %v", err)
+				}
+				batch = batch[:0]
+			}
+		}
+	}
+	log.Printf("[Seed Mongo] Successfully seeded vuelos natively into MongoDB.")
 }

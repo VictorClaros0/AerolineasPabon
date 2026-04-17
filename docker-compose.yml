@@ -78,7 +78,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # MongoDB - Backup/Sync Replica
+  # MongoDB - /Sync Replica
   mongodb:
     image: mongo:7.0
     environment:

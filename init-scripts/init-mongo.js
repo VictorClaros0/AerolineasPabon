@@ -11,14 +11,16 @@ db.createCollection('boletos');
 db.createCollection('precios');
 db.createCollection('detalles_vuelos');
 
-// Basic data for estados_vuelo
+// Basic data for estados_vuelo ('DELAYED'), ('CANCELLED')
 db.estados_vuelo.insertMany([
   { id: 1, nombre: 'SCHEDULED' },
   { id: 2, nombre: 'BOARDING' },
   { id: 3, nombre: 'DEPARTED' },
   { id: 4, nombre: 'IN_FLIGHT' },
   { id: 5, nombre: 'LANDED' },
-  { id: 6, nombre: 'ARRIVED' }
+  { id: 6, nombre: 'ARRIVED' },
+  { id: 7, nombre: 'DELAYED' },
+  { id: 8, nombre: 'CANCELLED'}
 ]);
 
 // Ciudades representativas
